@@ -184,8 +184,8 @@ def main():
     app.add_handler(CommandHandler("leaderboard", leaderboard))
     app.add_handler(MessageHandler(filters.Regex(r"^MATCH"), handle_match))
 
-    print("🍬 Candy Crush Bot running...")
-    app.run_polling()
+    print("🍬 Candy Crush Bot is running...")
+    app.run_polling(close_loop=False)
 
 
 if __name__ == "__main__":
