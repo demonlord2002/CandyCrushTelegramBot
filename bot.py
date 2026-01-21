@@ -28,15 +28,16 @@ def generate_board():
 
 
 def board_to_text(board):
-    """Return string representation of the board"""
-    return "\n".join("".join(row) for row in board)
+    """Return string representation of the board with row/col numbers and spaces"""
+    text = "   " + " ".join(str(i+1) for i in range(GRID_SIZE)) + "\n"
+    for idx, row in enumerate(board):
+        text += f"{idx+1} |" + " ".join(row) + "|\n"
+    return text
 
 
 def find_matches(board):
-    """Find all matches of 3 or more same emojis in rows and columns"""
     matched = [[False]*GRID_SIZE for _ in range(GRID_SIZE)]
-    
-    # Check rows
+    # rows
     for r in range(GRID_SIZE):
         count = 1
         for c in range(1, GRID_SIZE):
@@ -50,8 +51,7 @@ def find_matches(board):
         if count >= 3:
             for i in range(GRID_SIZE-count, GRID_SIZE):
                 matched[r][i] = True
-
-    # Check columns
+    # columns
     for c in range(GRID_SIZE):
         count = 1
         for r in range(1, GRID_SIZE):
@@ -65,12 +65,10 @@ def find_matches(board):
         if count >= 3:
             for i in range(GRID_SIZE-count, GRID_SIZE):
                 matched[i][c] = True
-
     return matched
 
 
 def remove_matches(board, matched):
-    """Remove matched candies, collapse board, and return points earned"""
     points = 0
     for r in range(GRID_SIZE):
         for c in range(GRID_SIZE):
@@ -95,23 +93,18 @@ def remove_matches(board, matched):
 
 
 def swap_and_score(board, r, c, dr, dc):
-    """Swap candies, check matches recursively, and return total points"""
     nr, nc = r + dr, c + dc
     if not (0 <= nr < GRID_SIZE and 0 <= nc < GRID_SIZE):
         return 0
 
-    # Swap
     board[r][c], board[nr][nc] = board[nr][nc], board[r][c]
-
-    # Check for matches
     matched = find_matches(board)
     total_points = 0
+
     if not any(True in row for row in matched):
-        # Revert if no matches
         board[r][c], board[nr][nc] = board[nr][nc], board[r][c]
         return 0
 
-    # Remove matches recursively
     while True:
         matched = find_matches(board)
         if not any(True in row for row in matched):
@@ -122,7 +115,6 @@ def swap_and_score(board, r, c, dr, dc):
 
 
 def add_score(chat_id, user, points):
-    """Update MongoDB leaderboard"""
     if points <= 0:
         return
     scores_col.update_one(
@@ -131,6 +123,7 @@ def add_score(chat_id, user, points):
          "$inc": {"score": points}},
         upsert=True
     )
+
 
 # ─── Commands ──────────────────────────
 async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -167,7 +160,6 @@ async def end_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     users = scores_col.find({"chat_id": chat_id}).sort("score", -1).limit(10)
-
     text = "🏆 **Candy Crush Leaderboard** 🍬\n\n"
     for i, u in enumerate(users, start=1):
         text += f"{i}. @{u['username']} — {u['score']} 🍓\n"
@@ -219,7 +211,6 @@ async def handle_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─── Main ─────────────────────────────
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-
     app.add_handler(CommandHandler("start", start_game))
     app.add_handler(CommandHandler("end", end_game))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
