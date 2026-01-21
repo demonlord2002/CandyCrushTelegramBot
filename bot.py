@@ -22,6 +22,7 @@ games_col = db["games"]
 # ─── Runtime Memory ────────────────────
 games = {}      # chat_id -> board
 cooldowns = {}  # (chat_id, user_id) -> timestamp
+EMOJI_FONT_PATH = "fonts/NotoColorEmoji.ttf"
 
 # ─── Helpers ──────────────────────────
 def generate_board():
@@ -121,44 +122,63 @@ def add_score(chat_id, user, points):
 
 # ─── Board Image Generator ─────────────
 def generate_board_image(board):
-    cell_size = 60
-    margin = 50
-    width = GRID_SIZE * cell_size + margin
-    height = GRID_SIZE * cell_size + margin
+    cell_size = 70
+    margin_left = 70
+    margin_top = 70
+
+    width = GRID_SIZE * cell_size + margin_left + 20
+    height = GRID_SIZE * cell_size + margin_top + 20
+
     img = Image.new("RGBA", (width, height), (255, 255, 255, 255))
     draw = ImageDraw.Draw(img)
-    
-    # Font for emojis and numbers
-    try:
-        font = ImageFont.truetype("arial.ttf", 32)
-        num_font = ImageFont.truetype("arial.ttf", 24)
-    except:
-        font = ImageFont.load_default()
-        num_font = ImageFont.load_default()
 
-    # Draw column numbers
+    # ✅ Fonts (HEROKU SAFE)
+    try:
+        emoji_font = ImageFont.truetype(EMOJI_FONT_PATH, 48)
+        number_font = ImageFont.truetype(EMOJI_FONT_PATH, 26)
+    except Exception as e:
+        print("Font load error:", e)
+        emoji_font = ImageFont.load_default()
+        number_font = ImageFont.load_default()
+
+    # ─── Column Numbers ───
     for c in range(GRID_SIZE):
-        x = margin + c*cell_size + 20
-        y = 10
-        draw.text((x, y), str(c+1), font=num_font, fill="black")
-    
-    # Draw row numbers and emojis
+        x = margin_left + c * cell_size + cell_size // 2 - 8
+        y = 20
+        draw.text((x, y), str(c + 1), font=number_font, fill=(0, 0, 0))
+
+    # ─── Rows + Cells ───
     for r in range(GRID_SIZE):
-        y = margin + r*cell_size + 10
-        draw.text((10, y), str(r+1), font=num_font, fill="black")
+        y = margin_top + r * cell_size + cell_size // 2 - 14
+        draw.text((20, y), str(r + 1), font=number_font, fill=(0, 0, 0))
+
         for c in range(GRID_SIZE):
-            x = margin + c*cell_size + 10
-            draw.text((x, y), board[r][c], font=font, fill="black")
-            # Draw cell border
-            draw.rectangle([margin + c*cell_size, margin + r*cell_size,
-                            margin + (c+1)*cell_size, margin + (r+1)*cell_size],
-                           outline="black", width=2)
+            x0 = margin_left + c * cell_size
+            y0 = margin_top + r * cell_size
+            x1 = x0 + cell_size
+            y1 = y0 + cell_size
+
+            # Cell border
+            draw.rectangle(
+                [x0, y0, x1, y1],
+                outline=(0, 0, 0),
+                width=2
+            )
+
+            # Emoji centered
+            emoji_x = x0 + cell_size // 2 - 24
+            emoji_y = y0 + cell_size // 2 - 24
+            draw.text(
+                (emoji_x, emoji_y),
+                board[r][c],
+                font=emoji_font,
+                fill=(0, 0, 0)
+            )
 
     bio = io.BytesIO()
     img.save(bio, format="PNG")
     bio.seek(0)
     return bio
-
 
 # ─── Commands ──────────────────────────
 async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
