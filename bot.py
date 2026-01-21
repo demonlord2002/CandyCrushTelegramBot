@@ -9,23 +9,19 @@ from telegram.ext import (
     filters
 )
 from pymongo import MongoClient
-from config import BOT_TOKEN, MONGO_URL, BOARD_SIZE, CANDIES, COOLDOWN_SECONDS
+from config import BOT_TOKEN, MONGO_URL, GRID_SIZE, CANDIES, COOLDOWN_SECONDS, POINTS_PER_CANDY
 
-# ─── CONFIG ─────────────────────────────
-GRID_SIZE = 8  # 8x8 board
-POINTS_PER_CANDY = 10
-
-# ─── MONGO ──────────────────────────────
+# ─── MongoDB Setup ─────────────────────
 mongo = MongoClient(MONGO_URL)
 db = mongo["candy_crush"]
 scores_col = db["scores"]
 games_col = db["games"]
 
-# ─── MEMORY ─────────────────────────────
+# ─── Runtime Memory ────────────────────
 games = {}      # chat_id -> board
 cooldowns = {}  # (chat_id, user_id) -> timestamp
 
-# ─── HELPERS ────────────────────────────
+# ─── Helpers ──────────────────────────
 def generate_board():
     """Generates a random GRID_SIZE x GRID_SIZE board"""
     return [[random.choice(CANDIES) for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
@@ -39,6 +35,7 @@ def board_to_text(board):
 def find_matches(board):
     """Find all matches of 3 or more same emojis in rows and columns"""
     matched = [[False]*GRID_SIZE for _ in range(GRID_SIZE)]
+    
     # Check rows
     for r in range(GRID_SIZE):
         count = 1
@@ -73,7 +70,7 @@ def find_matches(board):
 
 
 def remove_matches(board, matched):
-    """Remove matched candies and collapse board, return points earned"""
+    """Remove matched candies, collapse board, and return points earned"""
     points = 0
     for r in range(GRID_SIZE):
         for c in range(GRID_SIZE):
@@ -81,16 +78,14 @@ def remove_matches(board, matched):
                 board[r][c] = ""
                 points += POINTS_PER_CANDY
 
-    # Collapse board
+    # Collapse columns
     for c in range(GRID_SIZE):
-        empty = [r for r in range(GRID_SIZE) if board[r][c] == ""]
-        if empty:
-            new_col = [board[r][c] for r in range(GRID_SIZE) if board[r][c] != ""]
-            new_col = [""]*(GRID_SIZE - len(new_col)) + new_col
-            for r in range(GRID_SIZE):
-                board[r][c] = new_col[r]
+        new_col = [board[r][c] for r in range(GRID_SIZE) if board[r][c] != ""]
+        new_col = [""]*(GRID_SIZE - len(new_col)) + new_col
+        for r in range(GRID_SIZE):
+            board[r][c] = new_col[r]
 
-    # Fill empty spaces with new candies
+    # Fill empty spaces
     for r in range(GRID_SIZE):
         for c in range(GRID_SIZE):
             if board[r][c] == "":
@@ -100,26 +95,30 @@ def remove_matches(board, matched):
 
 
 def swap_and_score(board, r, c, dr, dc):
-    """Swap two candies, check matches, return points earned"""
+    """Swap candies, check matches recursively, and return total points"""
     nr, nc = r + dr, c + dc
     if not (0 <= nr < GRID_SIZE and 0 <= nc < GRID_SIZE):
         return 0
 
+    # Swap
     board[r][c], board[nr][nc] = board[nr][nc], board[r][c]
+
+    # Check for matches
     matched = find_matches(board)
-    points = sum(POINTS_PER_CANDY for row in matched for m in row if m)
-    if points == 0:
-        board[r][c], board[nr][nc] = board[nr][nc], board[r][c]  # revert
+    total_points = 0
+    if not any(True in row for row in matched):
+        # Revert if no matches
+        board[r][c], board[nr][nc] = board[nr][nc], board[r][c]
         return 0
-    else:
-        # remove all matches recursively
-        total_points = 0
-        while True:
-            matched = find_matches(board)
-            if not any(True in row for row in matched):
-                break
-            total_points += remove_matches(board, matched)
-        return total_points
+
+    # Remove matches recursively
+    while True:
+        matched = find_matches(board)
+        if not any(True in row for row in matched):
+            break
+        total_points += remove_matches(board, matched)
+
+    return total_points
 
 
 def add_score(chat_id, user, points):
@@ -133,8 +132,7 @@ def add_score(chat_id, user, points):
         upsert=True
     )
 
-
-# ─── COMMANDS ───────────────────────────
+# ─── Commands ──────────────────────────
 async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type == "private":
         return
@@ -177,7 +175,7 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode="Markdown")
 
 
-# ─── GAMEPLAY ───────────────────────────
+# ─── Gameplay ──────────────────────────
 async def handle_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user = update.effective_user
@@ -218,7 +216,7 @@ async def handle_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ No match 😅 Try again!")
 
 
-# ─── MAIN ───────────────────────────────
+# ─── Main ─────────────────────────────
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
