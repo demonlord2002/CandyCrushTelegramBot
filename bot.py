@@ -1,5 +1,6 @@
 import random
 import time
+import io
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -9,6 +10,7 @@ from telegram.ext import (
     filters
 )
 from pymongo import MongoClient
+from PIL import Image, ImageDraw, ImageFont
 from config import BOT_TOKEN, MONGO_URL, GRID_SIZE, CANDIES, COOLDOWN_SECONDS, POINTS_PER_CANDY
 
 # ─── MongoDB Setup ─────────────────────
@@ -25,14 +27,6 @@ cooldowns = {}  # (chat_id, user_id) -> timestamp
 def generate_board():
     """Generates a random GRID_SIZE x GRID_SIZE board"""
     return [[random.choice(CANDIES) for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
-
-
-def board_to_text(board):
-    """Return string representation of the board with row/col numbers and spaces"""
-    text = "   " + " ".join(str(i+1) for i in range(GRID_SIZE)) + "\n"
-    for idx, row in enumerate(board):
-        text += f"{idx+1} |" + " ".join(row) + "|\n"
-    return text
 
 
 def find_matches(board):
@@ -125,6 +119,47 @@ def add_score(chat_id, user, points):
     )
 
 
+# ─── Board Image Generator ─────────────
+def generate_board_image(board):
+    cell_size = 60
+    margin = 50
+    width = GRID_SIZE * cell_size + margin
+    height = GRID_SIZE * cell_size + margin
+    img = Image.new("RGBA", (width, height), (255, 255, 255, 255))
+    draw = ImageDraw.Draw(img)
+    
+    # Font for emojis and numbers
+    try:
+        font = ImageFont.truetype("arial.ttf", 32)
+        num_font = ImageFont.truetype("arial.ttf", 24)
+    except:
+        font = ImageFont.load_default()
+        num_font = ImageFont.load_default()
+
+    # Draw column numbers
+    for c in range(GRID_SIZE):
+        x = margin + c*cell_size + 20
+        y = 10
+        draw.text((x, y), str(c+1), font=num_font, fill="black")
+    
+    # Draw row numbers and emojis
+    for r in range(GRID_SIZE):
+        y = margin + r*cell_size + 10
+        draw.text((10, y), str(r+1), font=num_font, fill="black")
+        for c in range(GRID_SIZE):
+            x = margin + c*cell_size + 10
+            draw.text((x, y), board[r][c], font=font, fill="black")
+            # Draw cell border
+            draw.rectangle([margin + c*cell_size, margin + r*cell_size,
+                            margin + (c+1)*cell_size, margin + (r+1)*cell_size],
+                           outline="black", width=2)
+
+    bio = io.BytesIO()
+    img.save(bio, format="PNG")
+    bio.seek(0)
+    return bio
+
+
 # ─── Commands ──────────────────────────
 async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type == "private":
@@ -135,12 +170,10 @@ async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     games[chat_id] = board
     games_col.update_one({"chat_id": chat_id}, {"$set": {"active": True}}, upsert=True)
 
-    await update.message.reply_text(
-        "🍬🍭 **Candy Crush Arena Started!** 🍓🍫\n\n"
-        "🎮 Play using: `MATCH <row> <col> <L/R/U/D>`\n"
-        "Example: `MATCH 2 3 L`\n\n"
-        f"{board_to_text(board)}",
-        parse_mode="Markdown"
+    board_img = generate_board_image(board)
+    await update.message.reply_photo(
+        board_img,
+        caption="🍬🍭 Candy Crush Arena Started! 🍓🍫\n🎮 Use: MATCH <row> <col> <L/R/U/D>\nExample: MATCH 2 3 L"
     )
 
 
@@ -183,7 +216,7 @@ async def handle_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         _, r, c, d = update.message.text.split()
-        r, c = int(r) - 1, int(c) - 1
+        r, c = int(r)-1, int(c)-1
         d = d.upper()
     except:
         return
@@ -198,11 +231,10 @@ async def handle_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if points > 0:
         add_score(chat_id, user, points)
         cooldowns[(chat_id, user.id)] = now
-        await update.message.reply_text(
-            f"💥 **Sweet Crush!** 🍬🍬🍬\n"
-            f"+{points} points 🎉\n\n"
-            f"{board_to_text(board)}",
-            parse_mode="Markdown"
+        board_img = generate_board_image(board)
+        await update.message.reply_photo(
+            board_img,
+            caption=f"💥 Sweet Crush! +{points} points 🎉"
         )
     else:
         await update.message.reply_text("❌ No match 😅 Try again!")
