@@ -1,0 +1,28 @@
+{
+  "name": "CandyCrushTelegramBot",
+  "description": "Candy Crush style Telegram group game bot",
+  "repository": "https://github.com/yourusername/candy-crush-bot",
+  "keywords": ["telegram", "game-bot", "candy-crush", "python"],
+  "buildpacks": [
+    { "url": "heroku/python" }
+  ],
+  "env": {
+    "BOT_TOKEN": {
+      "description": "Telegram Bot Token from @BotFather",
+      "required": true
+    },
+    "MONGO_URL": {
+      "description": "MongoDB connection URL",
+      "required": true
+    }
+  },
+  "formation": {
+    "worker": {
+      "quantity": 1,
+      "size": "Basic"
+    }
+  },
+  "scripts": {
+    "postdeploy": "echo '🍬 Candy Crush Bot deployed successfully!'"
+  }
+}
