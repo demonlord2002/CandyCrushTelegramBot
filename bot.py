@@ -132,25 +132,26 @@ def generate_board_image(board):
     img = Image.new("RGBA", (width, height), (255, 255, 255, 255))
     draw = ImageDraw.Draw(img)
 
-    # ✅ Fonts (HEROKU SAFE)
+    # ✅ MUST USE COLOR EMOJI FONT
     try:
-        emoji_font = ImageFont.truetype(EMOJI_FONT_PATH, 48)
-        number_font = ImageFont.truetype(EMOJI_FONT_PATH, 26)
+        emoji_font = ImageFont.truetype("fonts/NotoColorEmoji.ttf", 48)
+        number_font = ImageFont.truetype("fonts/NotoColorEmoji.ttf", 26)
     except Exception as e:
-        print("Font load error:", e)
-        emoji_font = ImageFont.load_default()
-        number_font = ImageFont.load_default()
+        print("❌ Emoji font missing:", e)
+        raise RuntimeError("NotoColorEmoji.ttf not found!")
 
     # ─── Column Numbers ───
     for c in range(GRID_SIZE):
-        x = margin_left + c * cell_size + cell_size // 2 - 8
+        x = margin_left + c * cell_size + cell_size // 2
         y = 20
-        draw.text((x, y), str(c + 1), font=number_font, fill=(0, 0, 0))
+        bbox = draw.textbbox((0, 0), str(c + 1), font=number_font)
+        draw.text((x - bbox[2]//2, y), str(c + 1), font=number_font, fill=(0, 0, 0))
 
     # ─── Rows + Cells ───
     for r in range(GRID_SIZE):
-        y = margin_top + r * cell_size + cell_size // 2 - 14
-        draw.text((20, y), str(r + 1), font=number_font, fill=(0, 0, 0))
+        y = margin_top + r * cell_size + cell_size // 2
+        bbox = draw.textbbox((0, 0), str(r + 1), font=number_font)
+        draw.text((20, y - bbox[3]//2), str(r + 1), font=number_font, fill=(0, 0, 0))
 
         for c in range(GRID_SIZE):
             x0 = margin_left + c * cell_size
@@ -159,26 +160,21 @@ def generate_board_image(board):
             y1 = y0 + cell_size
 
             # Cell border
-            draw.rectangle(
-                [x0, y0, x1, y1],
-                outline=(0, 0, 0),
-                width=2
-            )
+            draw.rectangle([x0, y0, x1, y1], outline=(0, 0, 0), width=2)
 
-            # Emoji centered
-            emoji_x = x0 + cell_size // 2 - 24
-            emoji_y = y0 + cell_size // 2 - 24
-            draw.text(
-                (emoji_x, emoji_y),
-                board[r][c],
-                font=emoji_font,
-                fill=(0, 0, 0)
-            )
+            # ✅ PERFECT EMOJI CENTERING
+            emoji = board[r][c]
+            bbox = draw.textbbox((0, 0), emoji, font=emoji_font)
+            ex = x0 + (cell_size - (bbox[2] - bbox[0])) // 2
+            ey = y0 + (cell_size - (bbox[3] - bbox[1])) // 2
+
+            draw.text((ex, ey), emoji, font=emoji_font)
 
     bio = io.BytesIO()
     img.save(bio, format="PNG")
     bio.seek(0)
     return bio
+
 
 # ─── Commands ──────────────────────────
 async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
