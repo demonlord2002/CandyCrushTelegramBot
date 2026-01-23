@@ -33,7 +33,7 @@ def buttons():
 def valid_word(word):
     if not re.fullmatch(r"[A-Za-z]+", word):
         return False
-    return zipf_frequency(word.lower(), "en") > 1.5
+    return zipf_frequency(word.lower(), "en") > 1.8
 
 
 # ---------------- START GAME ----------------
@@ -46,13 +46,15 @@ async def start_game(_, msg):
         "letter": letter,
         "used": set(),
         "last_user": None,
-        "streak": 0,
+        "streaks": {},
+        "mistakes": {},
         "hard": False,
-        "last_time": time.time()
+        "last_time": time.time(),
+        "alive": set()
     }
 
     await msg.reply(
-        f"""🔤🔥 WORD CHAIN BATTLE 🔥🔤
+        f"""🔤🔥 **WORD CHAIN BATTLE** 🔥🔤
 
 🎯 Mode: NORMAL
 🔠 Starting Letter: **{letter}**
@@ -72,70 +74,77 @@ async def start_game(_, msg):
 async def play(_, msg):
     chat = msg.chat.id
     user = msg.from_user
+    uid = user.id
     word = msg.text.strip().upper()
 
     if chat not in games:
         return
 
     game = games[chat]
+
+    # Register player
+    game["alive"].add(uid)
+    game["streaks"].setdefault(uid, 0)
+    game["mistakes"].setdefault(uid, 0)
+
+    # Skip eliminated
+    if game["mistakes"][uid] >= 3:
+        return
+
     now = time.time()
-    limit = 8 if game["hard"] else 15
+    limit = 10 if game["hard"] else 15
 
-    # ⏱️ TIME CHECK (STRICT)
+    # ⏱️ TIME CHECK
     if now - game["last_time"] > limit:
-        game["streak"] = 0
-        game["last_user"] = None
+        game["streaks"][uid] = 0
+        game["mistakes"][uid] += 1
         game["last_time"] = now
-        await msg.reply(
-            f"""💥 **TIME’S UP!**
 
-😵 No valid word for **{game['letter']}**
-➡️ Next round continues!""",
-            reply_markup=buttons()
-        )
+        if game["mistakes"][uid] >= 3:
+            game["alive"].discard(uid)
+            await msg.reply(
+                f"💀 **ELIMINATED!**\n@{user.username or user.first_name}",
+                reply_markup=buttons()
+            )
         return
 
     # INVALID WORD
     if not valid_word(word):
-        game["streak"] = 0
-        game["last_user"] = None
+        game["streaks"][uid] = 0
+        game["mistakes"][uid] += 1
         await msg.reply(
-            "❌ **NOT A REAL WORD** 🤔\nTurn lost!",
+            "❌ **INVALID WORD**\nTurn lost!",
             reply_markup=buttons()
         )
         return
 
     # WRONG LETTER
     if not word.startswith(game["letter"]):
-        game["streak"] = 0
-        game["last_user"] = None
+        game["streaks"][uid] = 0
+        game["mistakes"][uid] += 1
         await msg.reply(
-            f"❌ **WRONG START!**\nWord must begin with **{game['letter']}**",
+            f"❌ **WRONG START!**\nMust start with **{game['letter']}**",
             reply_markup=buttons()
         )
         return
 
     # DUPLICATE
     if word in game["used"]:
-        game["streak"] = 0
-        game["last_user"] = None
+        game["streaks"][uid] = 0
+        game["mistakes"][uid] += 1
         await msg.reply(
-            "❌ **WORD ALREADY USED!** 😬",
+            "❌ **WORD ALREADY USED!**",
             reply_markup=buttons()
         )
         return
 
-    # HARD MODE RULES
+    # HARD MODE
     if game["hard"]:
-        if len(word) < 5:
+        if len(word) < 5 or word.endswith("S"):
+            game["streaks"][uid] = 0
+            game["mistakes"][uid] += 1
             await msg.reply(
-                "❌ **TOO SHORT 😈**\nMinimum 5 letters!",
-                reply_markup=buttons()
-            )
-            return
-        if word.endswith("S"):
-            await msg.reply(
-                "❌ **PLURAL WORD NOT ALLOWED 🚫**",
+                "❌ **HARD MODE RULE VIOLATION 😈**",
                 reply_markup=buttons()
             )
             return
@@ -145,32 +154,28 @@ async def play(_, msg):
     game["letter"] = word[-1]
     game["last_time"] = now
 
-    if game["last_user"] == user.id:
-        game["streak"] += 1
-    else:
-        game["streak"] = 1
-
-    game["last_user"] = user.id
+    game["streaks"][uid] += 1
 
     score = 1
-    if game["streak"] % 3 == 0:
+    if game["streaks"][uid] % 3 == 0:
         score += 2
 
     users.update_one(
-        {"user_id": user.id},
+        {"user_id": uid},
         {"$inc": {"score": score}, "$set": {"name": user.first_name}},
         upsert=True
     )
 
     await msg.reply(
         f"""🔤🔥 **WORD CHAIN BATTLE** 🔥🔤
-        
+
 ✅ **{word}**
 
 🔠 Next Letter: **{game['letter']}**
 👤 Player: {user.mention}
-🔥 Streak: {game['streak']}
+🔥 Streak: {game['streaks'][uid]}
 🏆 +{score} points
+👥 Players Left: {len(game['alive'])}
 """,
         reply_markup=buttons()
     )
@@ -190,12 +195,12 @@ async def callbacks(_, cb):
         await cb.answer()
 
     elif cb.data == "streak":
-        await cb.answer("🔥 Keep your streak alive!")
+        await cb.answer("🔥 Keep answering correctly!")
 
     elif cb.data == "hard":
         if chat in games:
             games[chat]["hard"] = not games[chat]["hard"]
-            mode = "ON 😈 (8s)" if games[chat]["hard"] else "OFF 🙂 (15s)"
+            mode = "ON 😈 (10s)" if games[chat]["hard"] else "OFF 🙂 (15s)"
             await cb.message.reply(f"😈 **Hard Mode {mode}**", reply_markup=buttons())
         await cb.answer()
 
