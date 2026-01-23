@@ -34,7 +34,7 @@ def mode_text(game):
     return (
         "😈 HARD MODE | ⏱ 10s | Min 5 letters | No plurals"
         if game["hard"]
-        else "🙂 NORMAL MODE | ⏱ 15s"
+        else "🙂 NORMAL MODE | ⏱ 15s | 3 streak = +2 bonus"
     )
 
 def valid_word(word):
@@ -44,8 +44,23 @@ def valid_word(word):
 
 
 # ---------------- START GAME ----------------
-@app.on_message(filters.command("startword") & filters.group)
+@app.on_message(filters.command("startword"))
 async def start_game(_, msg):
+
+    # ❌ Only groups allowed
+    if msg.chat.type not in ("group", "supergroup"):
+        return await msg.reply("❌ This game works **only in groups**.")
+
+    # ❌ User must be admin
+    member = await app.get_chat_member(msg.chat.id, msg.from_user.id)
+    if member.status not in ("administrator", "owner"):
+        return await msg.reply("🚫 Only **group admins** can start the game.")
+
+    # ❌ Bot must be admin
+    bot_member = await app.get_chat_member(msg.chat.id, "me")
+    if bot_member.status != "administrator":
+        return await msg.reply("⚠️ Please **promote me as admin** to start the game.")
+
     chat = msg.chat.id
     letter = random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
@@ -53,7 +68,6 @@ async def start_game(_, msg):
         "letter": letter,
         "used": set(),
         "streaks": {},
-        "mistakes": {},
         "hard": False,
         "last_time": time.time(),
         "alive": set(),
@@ -68,6 +82,11 @@ async def start_game(_, msg):
 🎯 Round: 1
 🎮 {mode_text(games[chat])}
 🔠 Starting Letter: **{letter}**
+
+🧠 Rules:
+• Correct word = +1 point  
+• 3 streak = +2 bonus  
+• Hard mode: 5+ letters, no plurals  
 
 👇 Type a word to play!
 """,
@@ -90,7 +109,6 @@ async def play(_, msg):
 
     game = games[chat]
 
-    # ❌ Ignore failed users silently
     if uid in game["failed_round"]:
         return
 
@@ -104,43 +122,29 @@ async def play(_, msg):
     if now - game["last_time"] > limit:
         game["failed_round"].add(uid)
         game["streaks"][uid] = 0
+        return await msg.reply(f"⏱ {user.mention} **time over!** Wait next round.")
 
-        await msg.reply(
-            f"""⏱ **TIME OVER!**
-
-❌ {user.mention}, you failed this round.
-👉 Wait for **next round** to play again.
-""",
-            reply_markup=buttons()
-        )
-        return
-
-    # INVALID WORD
     if not valid_word(word):
         game["streaks"][uid] = 0
-        return
+        return await msg.reply("❌ Invalid English word.")
 
-    # WRONG LETTER
     if not word.startswith(game["letter"]):
         game["streaks"][uid] = 0
-        return
+        return await msg.reply(f"❌ Word must start with **{game['letter']}**")
 
-    # DUPLICATE
     if word in game["used"]:
         game["streaks"][uid] = 0
-        return
+        return await msg.reply("❌ Word already used.")
 
-    # HARD MODE RULE
     if game["hard"] and (len(word) < 5 or word.endswith("S")):
         game["streaks"][uid] = 0
-        return
+        return await msg.reply("😈 Hard Mode rule broken! (5+ letters, no plurals)")
 
     # ✅ ACCEPT WORD
     game["used"].add(word)
     game["letter"] = word[-1]
     game["last_time"] = now
     game["streaks"][uid] += 1
-
     game["round"] += 1
     game["failed_round"].clear()
 
@@ -150,25 +154,30 @@ async def play(_, msg):
 
     users.update_one(
         {"user_id": uid},
-        {"$inc": {"score": score}, "$set": {"name": user.first_name}},
+        {
+            "$inc": {"score": score},
+            "$set": {
+                "name": user.first_name,
+                "user_id": uid
+            }
+        },
         upsert=True
     )
 
     await app.edit_message_text(
-        chat_id=chat,
-        message_id=game["message_id"],
-        text=f"""🔤🔥 **WORD CHAIN BATTLE** 🔥🔤
+        chat,
+        game["message_id"],
+        f"""🔤🔥 **WORD CHAIN BATTLE** 🔥🔤
 
 🎯 Round: {game['round']}
 🎮 {mode_text(game)}
 
 ✅ **{word}**
-
 🔠 Next Letter: **{game['letter']}**
+
 👤 Player: {user.mention}
 🔥 Streak: {game['streaks'][uid]}
 🏆 +{score} points
-👥 Players Left: {len(game['alive'])}
 """,
         reply_markup=buttons()
     )
@@ -178,42 +187,37 @@ async def play(_, msg):
 @app.on_callback_query()
 async def callbacks(_, cb):
     chat = cb.message.chat.id
+    uid = cb.from_user.id
 
-    if cb.data == "leaderboard":
+    if cb.data == "streak":
+        game = games.get(chat)
+        streak = game["streaks"].get(uid, 0) if game else 0
+        user_db = users.find_one({"user_id": uid}) or {}
+        score = user_db.get("score", 0)
+
+        await cb.answer(
+            f"🔥 Your Streak: {streak}\n🏆 Total Points: {score}",
+            show_alert=True
+        )
+
+    elif cb.data == "leaderboard":
         top = users.find().sort("score", -1).limit(5)
         text = "🏆 **GLOBAL LEADERBOARD** 🏆\n\n"
-        for i, u in enumerate(top, 1):
-            name = u.get("name") or f"User {u.get('user_id')}"
-            text += f"{i}. {name} — {u.get('score',0)} pts\n"
-        await cb.message.reply(text, reply_markup=buttons())
-        await cb.answer()
 
-    elif cb.data == "streak":
-        await cb.answer("🔥 Keep your streak alive!")
+        for i, u in enumerate(top, 1):
+            name = u.get("name", "Player")
+            uid = u["user_id"]
+            text += f"{i}. [{name}](tg://user?id={uid}) — {u.get('score',0)} pts\n"
+
+        await cb.message.reply(text, disable_web_page_preview=True)
 
     elif cb.data == "hard":
         if chat in games:
-            game = games[chat]
-            game["hard"] = not game["hard"]
-
-            await app.edit_message_text(
-                chat_id=chat,
-                message_id=game["message_id"],
-                text=f"""🔤🔥 **WORD CHAIN BATTLE** 🔥🔤
-
-🎯 Round: {game['round']}
-🎮 {mode_text(game)}
-🔠 Current Letter: **{game['letter']}**
-
-👇 Type a word to play!
-""",
-                reply_markup=buttons()
-            )
-        await cb.answer("Mode updated!")
+            games[chat]["hard"] = not games[chat]["hard"]
+            await cb.answer("😈 Hard Mode toggled!")
 
     elif cb.data == "stop":
         games.pop(chat, None)
-        await cb.message.reply("⏹ **Game stopped.**", reply_markup=buttons())
-        await cb.answer()
+        await cb.message.reply("⏹ **Game stopped.**")
 
 app.run()
