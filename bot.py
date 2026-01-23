@@ -1,6 +1,7 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pymongo import MongoClient
+from wordfreq import zipf_frequency
 import time, random, re
 from config import *
 
@@ -16,7 +17,7 @@ db = mongo[DB_NAME]
 users = db.users
 games = {}
 
-# ---------- UI ----------
+# ---------------- UI ----------------
 def buttons():
     return InlineKeyboardMarkup([
         [
@@ -30,9 +31,12 @@ def buttons():
     ])
 
 def valid_word(word):
-    return re.fullmatch(r"[A-Za-z]+", word)
+    if not re.fullmatch(r"[A-Za-z]+", word):
+        return False
+    # intelligent English check
+    return zipf_frequency(word.lower(), "en") > 1.5
 
-# ---------- START GAME ----------
+# ---------------- START GAME ----------------
 @app.on_message(filters.command("startword") & filters.group)
 async def start_game(_, msg):
     chat = msg.chat.id
@@ -52,15 +56,17 @@ async def start_game(_, msg):
 
 🎯 Mode: NORMAL
 🔠 Starting Letter: **{letter}**
-⏱️ Time Limit: {TIME_LIMIT}s
+⏱️ Time Limit: 15s
 
 🔥 Streak Bonus: ON
 😈 Hard Mode: OFF
+
+👇 Type a word to play!
 """,
         reply_markup=buttons()
     )
 
-# ---------- GAME PLAY ----------
+# ---------------- GAME PLAY ----------------
 @app.on_message(filters.text & filters.group)
 async def play(_, msg):
     chat = msg.chat.id
@@ -72,9 +78,9 @@ async def play(_, msg):
 
     game = games[chat]
     now = time.time()
-    limit = HARD_TIME_LIMIT if game["hard"] else TIME_LIMIT
+    limit = 10 if game["hard"] else 15
 
-    # ⏱️ TIME CHECK (IMPORTANT FIX)
+    # ⏱️ TIME CHECK
     if now - game["last_time"] > limit:
         game["streak"] = 0
         game["last_user"] = None
@@ -83,33 +89,53 @@ async def play(_, msg):
             f"""💥 TIME’S UP!
 
 😵 No valid word for **{game['letter']}**
-➡️ New round started!"""
+➡️ Game continues!"""
         )
 
-    # WORD VALIDATION
+    # INVALID / NON-MEANING WORD
     if not valid_word(word):
-        return
-
-    if not word.startswith(game["letter"]):
+        game["streak"] = 0
+        game["last_user"] = None
         return await msg.reply(
-            f"❌ INVALID START!\nWord must begin with **{game['letter']}**"
+            "❌ NOT A REAL WORD 🤔\nYour turn lost! Others continue 👇"
         )
 
-    if word in game["used"]:
-        return await msg.reply("❌ WORD ALREADY USED!")
+    # WRONG START LETTER
+    if not word.startswith(game["letter"]):
+        game["streak"] = 0
+        game["last_user"] = None
+        return await msg.reply(
+            f"❌ WRONG LETTER!\nWord must start with **{game['letter']}**"
+        )
 
+    # DUPLICATE WORD
+    if word in game["used"]:
+        game["streak"] = 0
+        game["last_user"] = None
+        return await msg.reply(
+            "❌ WORD ALREADY USED!\nTurn skipped 😬"
+        )
+
+    # HARD MODE RULES
     if game["hard"]:
         if len(word) < 5:
-            return await msg.reply("❌ TOO SHORT 😬\nMinimum 5 letters required!")
+            game["streak"] = 0
+            game["last_user"] = None
+            return await msg.reply(
+                "❌ TOO SHORT 😈\nMinimum 5 letters!"
+            )
         if word.endswith("S"):
-            return await msg.reply("❌ PLURAL WORD NOT ALLOWED 🚫")
+            game["streak"] = 0
+            game["last_user"] = None
+            return await msg.reply(
+                "❌ PLURAL WORD 🚫\nNo S / ES allowed!"
+            )
 
     # ACCEPT WORD
     game["used"].add(word)
     game["letter"] = word[-1]
     game["last_time"] = now
 
-    # 🔥 STREAK LOGIC (FIXED)
     if game["last_user"] == user.id:
         game["streak"] += 1
     else:
@@ -123,10 +149,7 @@ async def play(_, msg):
 
     users.update_one(
         {"user_id": user.id},
-        {
-            "$inc": {"score": score},
-            "$set": {"name": user.first_name}
-        },
+        {"$inc": {"score": score}, "$set": {"name": user.first_name}},
         upsert=True
     )
 
@@ -141,7 +164,7 @@ async def play(_, msg):
         reply_markup=buttons()
     )
 
-# ---------- CALLBACKS ----------
+# ---------------- CALLBACKS ----------------
 @app.on_callback_query()
 async def callbacks(_, cb):
     chat = cb.message.chat.id
@@ -149,20 +172,20 @@ async def callbacks(_, cb):
 
     if data == "leaderboard":
         top = users.find().sort("score", -1).limit(5)
-        text = "🏆 **LEADERBOARD** 🏆\n\n"
+        text = "🏆 **GLOBAL LEADERBOARD** 🏆\n\n"
         for i, u in enumerate(top, 1):
             text += f"{i}. {u.get('name')} — {u.get('score',0)} pts\n"
         await cb.message.reply(text)
         await cb.answer()
 
     elif data == "streak":
-        await cb.answer("🔥 Answer continuously to earn bonus points!")
+        await cb.answer("🔥 Keep answering correctly to build streaks!")
 
     elif data == "hard":
         if chat in games:
             games[chat]["hard"] = not games[chat]["hard"]
-            mode = "ON 😈" if games[chat]["hard"] else "OFF 🙂"
-            await cb.message.reply(f"😈 Hard Mode: {mode}")
+            mode = "ON 😈 (10s)" if games[chat]["hard"] else "OFF 🙂 (15s)"
+            await cb.message.reply(f"😈 Hard Mode {mode}")
         await cb.answer()
 
     elif data == "stop":
