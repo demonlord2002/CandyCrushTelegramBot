@@ -1,4 +1,5 @@
 from pyrogram import Client, filters
+from pyrogram.enums import ChatType
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pymongo import MongoClient
 from wordfreq import zipf_frequency
@@ -48,7 +49,7 @@ def valid_word(word):
 async def start_game(_, msg):
 
     # ✅ Only groups
-    if msg.chat.type not in ("group", "supergroup"):
+    if msg.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP, "group", "supergroup"):
         return await msg.reply("❌ This game works **only in groups**.")
 
     # ✅ Bot must be admin
@@ -94,6 +95,7 @@ async def start_game(_, msg):
     )
 
     games[chat]["message_id"] = sent.id
+
 
 
 # ---------------- GAME PLAY ----------------
