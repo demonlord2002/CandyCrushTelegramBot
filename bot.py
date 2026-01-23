@@ -33,8 +33,8 @@ def buttons():
 def valid_word(word):
     if not re.fullmatch(r"[A-Za-z]+", word):
         return False
-    # intelligent English check
     return zipf_frequency(word.lower(), "en") > 1.5
+
 
 # ---------------- START GAME ----------------
 @app.on_message(filters.command("startword") & filters.group)
@@ -66,6 +66,7 @@ async def start_game(_, msg):
         reply_markup=buttons()
     )
 
+
 # ---------------- GAME PLAY ----------------
 @app.on_message(filters.text & filters.group)
 async def play(_, msg):
@@ -78,58 +79,66 @@ async def play(_, msg):
 
     game = games[chat]
     now = time.time()
-    limit = 10 if game["hard"] else 15
+    limit = 8 if game["hard"] else 15
 
-    # ⏱️ TIME CHECK
+    # ⏱️ TIME CHECK (STRICT)
     if now - game["last_time"] > limit:
         game["streak"] = 0
         game["last_user"] = None
         game["last_time"] = now
-        return await msg.reply(
-            f"""💥 TIME’S UP!
+        await msg.reply(
+            f"""💥 **TIME’S UP!**
 
 😵 No valid word for **{game['letter']}**
-➡️ Game continues!"""
+➡️ Next round continues!""",
+            reply_markup=buttons()
         )
+        return
 
-    # INVALID / NON-MEANING WORD
+    # INVALID WORD
     if not valid_word(word):
         game["streak"] = 0
         game["last_user"] = None
-        return await msg.reply(
-            "❌ NOT A REAL WORD 🤔\nYour turn lost! Others continue 👇"
+        await msg.reply(
+            "❌ **NOT A REAL WORD** 🤔\nTurn lost!",
+            reply_markup=buttons()
         )
+        return
 
-    # WRONG START LETTER
+    # WRONG LETTER
     if not word.startswith(game["letter"]):
         game["streak"] = 0
         game["last_user"] = None
-        return await msg.reply(
-            f"❌ WRONG LETTER!\nWord must start with **{game['letter']}**"
+        await msg.reply(
+            f"❌ **WRONG START!**\nWord must begin with **{game['letter']}**",
+            reply_markup=buttons()
         )
+        return
 
-    # DUPLICATE WORD
+    # DUPLICATE
     if word in game["used"]:
         game["streak"] = 0
         game["last_user"] = None
-        return await msg.reply(
-            "❌ WORD ALREADY USED!\nTurn skipped 😬"
+        await msg.reply(
+            "❌ **WORD ALREADY USED!** 😬",
+            reply_markup=buttons()
         )
+        return
 
     # HARD MODE RULES
     if game["hard"]:
         if len(word) < 5:
-            game["streak"] = 0
-            game["last_user"] = None
-            return await msg.reply(
-                "❌ TOO SHORT 😈\nMinimum 5 letters!"
+            await msg.reply(
+                "❌ **TOO SHORT 😈**\nMinimum 5 letters!",
+                reply_markup=buttons()
             )
+            return
         if word.endswith("S"):
-            game["streak"] = 0
-            game["last_user"] = None
-            return await msg.reply(
-                "❌ PLURAL WORD 🚫\nNo S / ES allowed!"
+            await msg.reply(
+                "❌ **PLURAL WORD NOT ALLOWED 🚫**",
+                reply_markup=buttons()
             )
+            return
 
     # ACCEPT WORD
     game["used"].add(word)
@@ -164,33 +173,33 @@ async def play(_, msg):
         reply_markup=buttons()
     )
 
+
 # ---------------- CALLBACKS ----------------
 @app.on_callback_query()
 async def callbacks(_, cb):
     chat = cb.message.chat.id
-    data = cb.data
 
-    if data == "leaderboard":
+    if cb.data == "leaderboard":
         top = users.find().sort("score", -1).limit(5)
         text = "🏆 **GLOBAL LEADERBOARD** 🏆\n\n"
         for i, u in enumerate(top, 1):
             text += f"{i}. {u.get('name')} — {u.get('score',0)} pts\n"
-        await cb.message.reply(text)
+        await cb.message.reply(text, reply_markup=buttons())
         await cb.answer()
 
-    elif data == "streak":
-        await cb.answer("🔥 Keep answering correctly to build streaks!")
+    elif cb.data == "streak":
+        await cb.answer("🔥 Keep your streak alive!")
 
-    elif data == "hard":
+    elif cb.data == "hard":
         if chat in games:
             games[chat]["hard"] = not games[chat]["hard"]
-            mode = "ON 😈 (10s)" if games[chat]["hard"] else "OFF 🙂 (15s)"
-            await cb.message.reply(f"😈 Hard Mode {mode}")
+            mode = "ON 😈 (8s)" if games[chat]["hard"] else "OFF 🙂 (15s)"
+            await cb.message.reply(f"😈 **Hard Mode {mode}**", reply_markup=buttons())
         await cb.answer()
 
-    elif data == "stop":
+    elif cb.data == "stop":
         games.pop(chat, None)
-        await cb.message.reply("⏹ Game stopped.")
+        await cb.message.reply("⏹ **Game stopped.**", reply_markup=buttons())
         await cb.answer()
 
 app.run()
