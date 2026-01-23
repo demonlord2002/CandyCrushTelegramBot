@@ -58,10 +58,11 @@ async def start_game(_, msg):
         "last_time": time.time(),
         "alive": set(),
         "round": 1,
-        "failed_round": set()
+        "failed_round": set(),
+        "message_id": None
     }
 
-    await msg.reply(
+    sent = await msg.reply(
         f"""🔤🔥 **WORD CHAIN BATTLE** 🔥🔤
 
 🎯 Round: 1
@@ -72,6 +73,8 @@ async def start_game(_, msg):
 """,
         reply_markup=buttons()
     )
+
+    games[chat]["message_id"] = sent.id
 
 
 # ---------------- GAME PLAY ----------------
@@ -93,12 +96,11 @@ async def play(_, msg):
 
     game["alive"].add(uid)
     game["streaks"].setdefault(uid, 0)
-    game["mistakes"].setdefault(uid, 0)
 
     now = time.time()
     limit = 10 if game["hard"] else 15
 
-    # ⏱ TIME OVER LOGIC
+    # ⏱ TIME OVER
     if now - game["last_time"] > limit:
         game["failed_round"].add(uid)
         game["streaks"][uid] = 0
@@ -118,12 +120,12 @@ async def play(_, msg):
         game["streaks"][uid] = 0
         return
 
-    # WRONG START LETTER
+    # WRONG LETTER
     if not word.startswith(game["letter"]):
         game["streaks"][uid] = 0
         return
 
-    # DUPLICATE WORD
+    # DUPLICATE
     if word in game["used"]:
         game["streaks"][uid] = 0
         return
@@ -139,7 +141,6 @@ async def play(_, msg):
     game["last_time"] = now
     game["streaks"][uid] += 1
 
-    # 🔄 NEW ROUND START
     game["round"] += 1
     game["failed_round"].clear()
 
@@ -149,15 +150,14 @@ async def play(_, msg):
 
     users.update_one(
         {"user_id": uid},
-        {
-            "$inc": {"score": score},
-            "$set": {"name": user.first_name}
-        },
+        {"$inc": {"score": score}, "$set": {"name": user.first_name}},
         upsert=True
     )
 
-    await msg.reply(
-        f"""🔤🔥 **WORD CHAIN BATTLE** 🔥🔤
+    await app.edit_message_text(
+        chat_id=chat,
+        message_id=game["message_id"],
+        text=f"""🔤🔥 **WORD CHAIN BATTLE** 🔥🔤
 
 🎯 Round: {game['round']}
 🎮 {mode_text(game)}
@@ -182,11 +182,9 @@ async def callbacks(_, cb):
     if cb.data == "leaderboard":
         top = users.find().sort("score", -1).limit(5)
         text = "🏆 **GLOBAL LEADERBOARD** 🏆\n\n"
-
         for i, u in enumerate(top, 1):
             name = u.get("name") or f"User {u.get('user_id')}"
-            text += f"{i}. {name} — {u.get('score', 0)} pts\n"
-
+            text += f"{i}. {name} — {u.get('score',0)} pts\n"
         await cb.message.reply(text, reply_markup=buttons())
         await cb.answer()
 
@@ -195,12 +193,23 @@ async def callbacks(_, cb):
 
     elif cb.data == "hard":
         if chat in games:
-            games[chat]["hard"] = not games[chat]["hard"]
-            await cb.message.reply(
-                f"😈 **Mode Changed**\n{mode_text(games[chat])}",
+            game = games[chat]
+            game["hard"] = not game["hard"]
+
+            await app.edit_message_text(
+                chat_id=chat,
+                message_id=game["message_id"],
+                text=f"""🔤🔥 **WORD CHAIN BATTLE** 🔥🔤
+
+🎯 Round: {game['round']}
+🎮 {mode_text(game)}
+🔠 Current Letter: **{game['letter']}**
+
+👇 Type a word to play!
+""",
                 reply_markup=buttons()
             )
-        await cb.answer()
+        await cb.answer("Mode updated!")
 
     elif cb.data == "stop":
         games.pop(chat, None)
