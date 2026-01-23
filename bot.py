@@ -47,7 +47,7 @@ def valid_word(word):
 @app.on_message(filters.command("startword"))
 async def start_game(_, msg):
 
-    # ✅ Only allow groups
+    # ✅ Only groups
     if msg.chat.type not in ("group", "supergroup"):
         return await msg.reply("❌ This game works **only in groups**.")
 
@@ -55,6 +55,11 @@ async def start_game(_, msg):
     bot_member = await app.get_chat_member(msg.chat.id, app.me.id)
     if bot_member.status not in ("administrator", "creator"):
         return await msg.reply("⚠️ Please **promote me as admin** to start the game.")
+
+    # Optional: ensure bot has permissions
+    if bot_member.status == "administrator":
+        if not getattr(bot_member, "can_manage_chat", True) and not getattr(bot_member, "can_delete_messages", True):
+            return await msg.reply("⚠️ Please give me full admin permissions to start the game.")
 
     chat = msg.chat.id
     letter = random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
