@@ -16,6 +16,7 @@ db = mongo[DB_NAME]
 users = db.users
 games = {}
 
+# ---------- UI ----------
 def buttons():
     return InlineKeyboardMarkup([
         [
@@ -31,17 +32,19 @@ def buttons():
 def valid_word(word):
     return re.fullmatch(r"[A-Za-z]+", word)
 
+# ---------- START GAME ----------
 @app.on_message(filters.command("startword") & filters.group)
 async def start_game(_, msg):
     chat = msg.chat.id
     letter = random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
     games[chat] = {
         "letter": letter,
-        "used": [],
+        "used": set(),
         "last_user": None,
         "streak": 0,
         "hard": False,
-        "time": time.time()
+        "last_time": time.time()
     }
 
     await msg.reply(
@@ -49,7 +52,7 @@ async def start_game(_, msg):
 
 🎯 Mode: NORMAL
 🔠 Starting Letter: **{letter}**
-⏱️ Time Limit: 10s
+⏱️ Time Limit: {TIME_LIMIT}s
 
 🔥 Streak Bonus: ON
 😈 Hard Mode: OFF
@@ -57,33 +60,56 @@ async def start_game(_, msg):
         reply_markup=buttons()
     )
 
+# ---------- GAME PLAY ----------
 @app.on_message(filters.text & filters.group)
 async def play(_, msg):
     chat = msg.chat.id
     user = msg.from_user
-    word = msg.text.upper()
+    word = msg.text.strip().upper()
 
     if chat not in games:
         return
 
     game = games[chat]
+    now = time.time()
+    limit = HARD_TIME_LIMIT if game["hard"] else TIME_LIMIT
 
+    # ⏱️ TIME CHECK (IMPORTANT FIX)
+    if now - game["last_time"] > limit:
+        game["streak"] = 0
+        game["last_user"] = None
+        game["last_time"] = now
+        return await msg.reply(
+            f"""💥 TIME’S UP!
+
+😵 No valid word for **{game['letter']}**
+➡️ New round started!"""
+        )
+
+    # WORD VALIDATION
     if not valid_word(word):
         return
 
     if not word.startswith(game["letter"]):
-        return
+        return await msg.reply(
+            f"❌ INVALID START!\nWord must begin with **{game['letter']}**"
+        )
 
     if word in game["used"]:
-        return
+        return await msg.reply("❌ WORD ALREADY USED!")
 
     if game["hard"]:
-        if len(word) < 5 or word.endswith("S"):
-            return
+        if len(word) < 5:
+            return await msg.reply("❌ TOO SHORT 😬\nMinimum 5 letters required!")
+        if word.endswith("S"):
+            return await msg.reply("❌ PLURAL WORD NOT ALLOWED 🚫")
 
-    game["used"].append(word)
+    # ACCEPT WORD
+    game["used"].add(word)
     game["letter"] = word[-1]
+    game["last_time"] = now
 
+    # 🔥 STREAK LOGIC (FIXED)
     if game["last_user"] == user.id:
         game["streak"] += 1
     else:
@@ -92,12 +118,15 @@ async def play(_, msg):
     game["last_user"] = user.id
 
     score = 1
-    if game["streak"] == 3:
+    if game["streak"] % 3 == 0:
         score += 2
 
     users.update_one(
         {"user_id": user.id},
-        {"$inc": {"score": score}, "$set": {"name": user.first_name}},
+        {
+            "$inc": {"score": score},
+            "$set": {"name": user.first_name}
+        },
         upsert=True
     )
 
@@ -107,10 +136,12 @@ async def play(_, msg):
 🔠 Next Letter: **{game['letter']}**
 👤 Player: {user.mention}
 🔥 Streak: {game['streak']}
+🏆 +{score} points
 """,
         reply_markup=buttons()
     )
 
+# ---------- CALLBACKS ----------
 @app.on_callback_query()
 async def callbacks(_, cb):
     chat = cb.message.chat.id
@@ -121,18 +152,22 @@ async def callbacks(_, cb):
         text = "🏆 **LEADERBOARD** 🏆\n\n"
         for i, u in enumerate(top, 1):
             text += f"{i}. {u.get('name')} — {u.get('score',0)} pts\n"
-        await cb.answer()
         await cb.message.reply(text)
+        await cb.answer()
 
-    if data == "streak":
-        await cb.answer("🔥 Keep answering continuously!")
+    elif data == "streak":
+        await cb.answer("🔥 Answer continuously to earn bonus points!")
 
-    if data == "hard":
-        games[chat]["hard"] = not games[chat]["hard"]
-        await cb.answer("😈 Hard Mode toggled!")
+    elif data == "hard":
+        if chat in games:
+            games[chat]["hard"] = not games[chat]["hard"]
+            mode = "ON 😈" if games[chat]["hard"] else "OFF 🙂"
+            await cb.message.reply(f"😈 Hard Mode: {mode}")
+        await cb.answer()
 
-    if data == "stop":
+    elif data == "stop":
         games.pop(chat, None)
         await cb.message.reply("⏹ Game stopped.")
+        await cb.answer()
 
 app.run()
