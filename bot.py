@@ -163,7 +163,9 @@ async def play(_, msg):
     )
 
     await msg.reply(
-        f"""✅ **{word}**
+        f"""🔤🔥 **WORD CHAIN BATTLE** 🔥🔤
+        
+✅ **{word}**
 
 🔠 Next Letter: **{game['letter']}**
 👤 Player: {user.mention}
