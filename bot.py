@@ -30,6 +30,13 @@ def buttons():
         ]
     ])
 
+def mode_text(game):
+    return (
+        "😈 HARD MODE | ⏱ 10s | Min 5 letters | No plurals"
+        if game["hard"]
+        else "🙂 NORMAL MODE | ⏱ 15s"
+    )
+
 def valid_word(word):
     if not re.fullmatch(r"[A-Za-z]+", word):
         return False
@@ -56,12 +63,8 @@ async def start_game(_, msg):
     await msg.reply(
         f"""🔤🔥 **WORD CHAIN BATTLE** 🔥🔤
 
-🎯 Mode: NORMAL
+🎯 {mode_text(games[chat])}
 🔠 Starting Letter: **{letter}**
-⏱️ Time Limit: 15s
-
-🔥 Streak Bonus: ON
-😈 Hard Mode: OFF
 
 👇 Type a word to play!
 """,
@@ -82,78 +85,46 @@ async def play(_, msg):
 
     game = games[chat]
 
-    # Register player
     game["alive"].add(uid)
     game["streaks"].setdefault(uid, 0)
     game["mistakes"].setdefault(uid, 0)
 
-    # Skip eliminated
     if game["mistakes"][uid] >= 3:
         return
 
     now = time.time()
     limit = 10 if game["hard"] else 15
 
-    # ⏱️ TIME CHECK
     if now - game["last_time"] > limit:
         game["streaks"][uid] = 0
         game["mistakes"][uid] += 1
         game["last_time"] = now
-
-        if game["mistakes"][uid] >= 3:
-            game["alive"].discard(uid)
-            await msg.reply(
-                f"💀 **ELIMINATED!**\n@{user.username or user.first_name}",
-                reply_markup=buttons()
-            )
         return
 
-    # INVALID WORD
     if not valid_word(word):
         game["streaks"][uid] = 0
         game["mistakes"][uid] += 1
-        await msg.reply(
-            "❌ **INVALID WORD**\nTurn lost!",
-            reply_markup=buttons()
-        )
         return
 
-    # WRONG LETTER
     if not word.startswith(game["letter"]):
         game["streaks"][uid] = 0
         game["mistakes"][uid] += 1
-        await msg.reply(
-            f"❌ **WRONG START!**\nMust start with **{game['letter']}**",
-            reply_markup=buttons()
-        )
         return
 
-    # DUPLICATE
     if word in game["used"]:
         game["streaks"][uid] = 0
         game["mistakes"][uid] += 1
-        await msg.reply(
-            "❌ **WORD ALREADY USED!**",
-            reply_markup=buttons()
-        )
         return
 
-    # HARD MODE
-    if game["hard"]:
-        if len(word) < 5 or word.endswith("S"):
-            game["streaks"][uid] = 0
-            game["mistakes"][uid] += 1
-            await msg.reply(
-                "❌ **HARD MODE RULE VIOLATION 😈**",
-                reply_markup=buttons()
-            )
-            return
+    if game["hard"] and (len(word) < 5 or word.endswith("S")):
+        game["streaks"][uid] = 0
+        game["mistakes"][uid] += 1
+        return
 
     # ACCEPT WORD
     game["used"].add(word)
     game["letter"] = word[-1]
     game["last_time"] = now
-
     game["streaks"][uid] += 1
 
     score = 1
@@ -168,6 +139,7 @@ async def play(_, msg):
 
     await msg.reply(
         f"""🔤🔥 **WORD CHAIN BATTLE** 🔥🔤
+🎯 {mode_text(game)}
 
 ✅ **{word}**
 
@@ -189,8 +161,11 @@ async def callbacks(_, cb):
     if cb.data == "leaderboard":
         top = users.find().sort("score", -1).limit(5)
         text = "🏆 **GLOBAL LEADERBOARD** 🏆\n\n"
+
         for i, u in enumerate(top, 1):
-            text += f"{i}. {u.get('name')} — {u.get('score',0)} pts\n"
+            name = u.get("name") or f"User {u.get('user_id')}"
+            text += f"{i}. {name} — {u.get('score',0)} pts\n"
+
         await cb.message.reply(text, reply_markup=buttons())
         await cb.answer()
 
@@ -200,8 +175,10 @@ async def callbacks(_, cb):
     elif cb.data == "hard":
         if chat in games:
             games[chat]["hard"] = not games[chat]["hard"]
-            mode = "ON 😈 (10s)" if games[chat]["hard"] else "OFF 🙂 (15s)"
-            await cb.message.reply(f"😈 **Hard Mode {mode}**", reply_markup=buttons())
+            await cb.message.reply(
+                f"😈 **Mode Changed**\n{mode_text(games[chat])}",
+                reply_markup=buttons()
+            )
         await cb.answer()
 
     elif cb.data == "stop":
