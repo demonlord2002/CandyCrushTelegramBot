@@ -46,16 +46,17 @@ def valid_word(word):
 # ---------------- START GAME ----------------
 @app.on_message(filters.command("startword"))
 async def start_game(_, msg):
-    # Only groups
-    if msg.chat.type not in ("group", "supergroup"):
+
+    # ✅ Only groups
+    if str(msg.chat.type).lower() not in ("group", "supergroup"):
         return await msg.reply("❌ This game works **only in groups**.")
 
-    # Optional: only allow admins to start (comment if you want all members)
+    # Optional: only allow admins to start
     # member = await app.get_chat_member(msg.chat.id, msg.from_user.id)
     # if member.status not in ("administrator", "creator"):
     #     return await msg.reply("🚫 Only **group admins** can start the game.")
 
-    # Bot must be admin
+    # ✅ Bot must be admin
     bot_member = await app.get_chat_member(msg.chat.id, app.me.id)
     if bot_member.status not in ("administrator", "creator"):
         return await msg.reply("⚠️ Please **promote me as admin** to start the game.")
@@ -93,6 +94,7 @@ async def start_game(_, msg):
     )
 
     games[chat]["message_id"] = sent.id
+
 
 
 
