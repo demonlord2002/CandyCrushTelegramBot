@@ -1,18 +1,26 @@
 {
-  "name": "CandyCrushTelegramBot",
-  "description": "Candy Crush style Telegram group game bot",
-  "repository": "https://github.com/yourusername/candy-crush-bot",
-  "keywords": ["telegram", "game-bot", "candy-crush", "python"],
+  "name": "WordChainBattleBot",
+  "description": "Word Chain Battle – addictive Telegram group game bot with streaks, hard mode, leaderboard and MongoDB",
+  "repository": "https://github.com/yourusername/word-chain-bot",
+  "keywords": ["telegram", "game-bot", "word-chain", "leaderboard", "mongodb", "python"],
   "buildpacks": [
     { "url": "heroku/python" }
   ],
   "env": {
+    "API_ID": {
+      "description": "Telegram API ID from https://my.telegram.org",
+      "required": true
+    },
+    "API_HASH": {
+      "description": "Telegram API HASH from https://my.telegram.org",
+      "required": true
+    },
     "BOT_TOKEN": {
       "description": "Telegram Bot Token from @BotFather",
       "required": true
     },
-    "MONGO_URL": {
-      "description": "MongoDB connection URL",
+    "MONGO_URI": {
+      "description": "MongoDB connection URI (MongoDB Atlas)",
       "required": true
     }
   },
@@ -23,6 +31,6 @@
     }
   },
   "scripts": {
-    "postdeploy": "echo '🍬 Candy Crush Bot deployed successfully!'"
+    "postdeploy": "echo '🔤🔥 Word Chain Battle Bot deployed successfully!'"
   }
 }
