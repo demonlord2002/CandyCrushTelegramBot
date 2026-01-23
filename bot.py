@@ -47,8 +47,8 @@ def valid_word(word):
 @app.on_message(filters.command("startword"))
 async def start_game(_, msg):
 
-    # ✅ Only groups (negative chat ID)
-    if msg.chat.id > 0:
+    # ✅ Only allow groups
+    if msg.chat.type not in ("group", "supergroup"):
         return await msg.reply("❌ This game works **only in groups**.")
 
     # ✅ Bot must be admin
@@ -89,6 +89,7 @@ async def start_game(_, msg):
     )
 
     games[chat]["message_id"] = sent.id
+
 
 # ---------------- GAME PLAY ----------------
 @app.on_message(filters.text & filters.group)
