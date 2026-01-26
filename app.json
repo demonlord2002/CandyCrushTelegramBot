@@ -9,12 +9,12 @@
   "env": {
     "API_ID": {
       "description": "Telegram API ID from https://my.telegram.org",
-      "value": "24977986"
+      "value": "24977986",
       "required": true
     },
     "API_HASH": {
       "description": "Telegram API HASH from https://my.telegram.org",
-      "value": "abc6095228862c7502397c928bd7999e"
+      "value": "abc6095228862c7502397c928bd7999e",
       "required": true
     },
     "BOT_TOKEN": {
@@ -24,7 +24,7 @@
     },
     "MONGO_URI": {
       "description": "MongoDB connection URI (MongoDB Atlas)",
-      "value": "mongodb+srv://drdoom2003p:drdoom2003p@cluster0.fnhjrtn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+      "value": "mongodb+srv://drdoom2003p:drdoom2003p@cluster0.fnhjrtn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0",
       "required": true
     }
   },
