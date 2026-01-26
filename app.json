@@ -17,10 +17,12 @@
     },
     "BOT_TOKEN": {
       "description": "Telegram Bot Token from @BotFather",
+      "value": "8394852857:AAFBD9KA2uaIktkWHBdf88b22qTETcmtrg4",
       "required": true
     },
     "MONGO_URI": {
       "description": "MongoDB connection URI (MongoDB Atlas)",
+      "value": "mongodb+srv://drdoom2003p:drdoom2003p@cluster0.fnhjrtn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
       "required": true
     }
   },
