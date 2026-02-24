@@ -71,8 +71,6 @@ async def root():
     return {
         "status": "online",
         "developer": "@JinWoonHwi",
-        "owner": "ㅤ𝑪𝒖𝒓𝒔𝒆𝒅 <//>",
-        "telegram": "https://t.me/JinWoonHwi",
         "uptime_hours": hours,
         "uptime_minutes": minutes,
         "total_requests": TOTAL_REQUESTS,
